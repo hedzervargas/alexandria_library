@@ -1,6 +1,8 @@
 from prettytable import PrettyTable
 from datetime import datetime, timedelta
 
+today = datetime.now().date()
+
 # crud functions for books
 
 
@@ -93,7 +95,6 @@ def read_author_names(cursor, book_id):
     select_query = f"SELECT a.name FROM authors a LEFT JOIN book_author b ON a.author_id = b.author_id LEFT JOIN books c ON b.book_id = c.book_id where c.book_id = {book_id}"
     cursor.execute(select_query)
     fetched_names = cursor.fetchall()
-    # print(fetched_names)
     names = []
 
     for name in fetched_names:
@@ -248,18 +249,52 @@ def create_client(cursor, conn, client_id, first_name, last_name, phone_number, 
     cursor.execute(insert_query, values)
     conn.commit()
 
-
 def read_clients(cursor):
     select_query = "SELECT * FROM clients"
     cursor.execute(select_query)
-    rows = cursor.fetchall()
+    fetched_clients = cursor.fetchall()
 
-    table = PrettyTable()
-    table.field_names = ["Client ID", "First Name", "Last Name",
-                         "Phone Number", "Street", "House Nr", "City", "Email Address"]
-    for row in rows:
-        table.add_row(row)
-    print(table)
+    clients = [{'client_id': item[0], 'first_name': item[1], 'last_name': item[2], 'phone_number': item[3], 'street': item[4], 'house_nr': item[5], 'city': item[6], 'email_address': item[7]} for item in fetched_clients]
+
+    # print(clients[0])
+
+    for client in clients:
+        # add return date
+        address = f'{client["street"]} {client["house_nr"]}, {client["city"]}'
+        client['address'] = address
+        del client['street']
+        del client['house_nr']
+        del client['city']     
+
+        # add name
+        name = f'{client["first_name"]} {client["last_name"]}'
+        client['name'] = name
+        del client['first_name']
+        del client['last_name']
+
+        # add has overdue borrowings
+        has_overdue_borrowings = 'n'
+        borrowing_ids = read_borrowing_ids(cursor, client['client_id'])
+        for id in borrowing_ids:
+            is_overdue = borrowing_is_overdue(cursor, id)
+            if (is_overdue == 'y'): has_overdue_borrowings = 'y'
+
+        client['has_overdue_borrowings'] = has_overdue_borrowings
+
+
+    return clients
+
+# def read_clients(cursor):
+#     select_query = "SELECT * FROM clients"
+#     cursor.execute(select_query)
+#     rows = cursor.fetchall()
+
+#     table = PrettyTable()
+#     table.field_names = ["Client ID", "First Name", "Last Name",
+#                          "Phone Number", "Street", "House Nr", "City", "Email Address"]
+#     for row in rows:
+#         table.add_row(row)
+#     print(table)
 
 
 def update_client(cursor, conn, client_id, first_name, last_name, phone_number, street, house_nr, city, email_address):
@@ -295,17 +330,30 @@ def read_borrowings(cursor):
     borrowings = [{'borrowing_id': item[0], 'copy_id': item[4], 'borrowing_date': item[1], 'is_extended': item[2], 'client_id': item[3], 'return_id': item[5]} for item in fetched_borrowings]
 
     for borrowing in borrowings:
-        # add return date
+        # add due date
         date = borrowing['borrowing_date']
         # Add 7/14 days to the date
         borrowing_length = 14 if borrowing["is_extended"] == 'y' else 7
         new_date = date + timedelta(days=borrowing_length)
-        borrowing['return_date'] = new_date
+        borrowing['due_date'] = new_date
 
         # add book title
         book_title = read_book_by_copy_id(cursor, borrowing['copy_id'])
         borrowing['book'] = book_title
-                         
+
+        # add can_be_extended
+        can_be_extended = 'n'
+        seven_days_ago = today - timedelta(days=7)
+        if (borrowing["borrowing_date"] > seven_days_ago and borrowing['return_id'] is None and borrowing['is_extended'] == 'n'):
+            can_be_extended = 'y'
+        borrowing['can_be_extended'] = can_be_extended
+
+        # add is overdue
+        is_overdue = 'n'
+        if (today > borrowing['due_date'] and borrowing['return_id'] == None):
+            is_overdue = 'y'
+        borrowing['is_overdue'] = is_overdue
+
     return borrowings
 
 def update_borrowing( cursor, conn, borrowing_id, borrowing_date, is_extended, client_id, copy_id, return_id):
@@ -320,6 +368,11 @@ def delete_borrowing(cursor, conn, borrowing_id):
     delete_query = "DELETE FROM borrowings WHERE borrowing_id = %s"
     value = (borrowing_id,)
     cursor.execute(delete_query, value)
+    conn.commit()
+
+def extend_borrowing(cursor, conn, id):
+    extend_query = f"update borrowings set is_extended = 'y' where borrowing_id = {id}"
+    cursor.execute(extend_query)
     conn.commit()
 
 # crud functions for returns
@@ -392,3 +445,27 @@ def delete_book_author(cursor, conn, book_id, author_id):
     cursor.execute(delete_query, values)
     conn.commit()
 
+def read_borrowing_ids(cursor, id):
+    select_query = f"SELECT borrowing_id FROM borrowings where client_id = {id}"
+    cursor.execute(select_query)
+    fetched_ids = cursor.fetchall()
+
+    borrowing_ids = [id[0] for id in fetched_ids]
+
+    return borrowing_ids
+
+def borrowing_is_overdue(cursor, id):
+    select_query = f"SELECT borrowing_date, is_extended, return_id FROM borrowings where borrowing_id = {id}"
+    cursor.execute(select_query)
+    fetched_data = cursor.fetchall()
+
+    borrowing_date = fetched_data[0][0]
+    is_extended = fetched_data[0][1]
+    is_returned = fetched_data[0][2]
+    seven_days = timedelta(days=7)
+    fourteen_days = timedelta(days=14)
+
+    due_date = borrowing_date + fourteen_days if is_extended == 'y' else borrowing_date + seven_days
+
+    if (is_returned == None and due_date < today): return 'y'
+    return 'n'

@@ -20,7 +20,7 @@ app = FastAPI()
 
 origins = [
     "http://localhost",
-    "http://localhost:8081",  # Update this with your Vue.js frontend URL
+    "http://localhost:8080",  # Update this with your Vue.js frontend URL
 ]
 
 app.add_middleware(
@@ -50,8 +50,22 @@ borrowings = sql.read_borrowings(cursor)
 def read_borrowings():
     return borrowings
 
-# print(sql.read_borrowings(cursor))
+clients = sql.read_clients(cursor)
 
+@app.get('/clients')
+def read_clients():
+    return clients
+
+
+@app.post('/extended-borrowing')
+async def extend_borrowing(id):
+    sql.extend_borrowing(cursor, conn, id)
+    return {'message': 'ID received succesfully'}
+
+print(
+
+sql.borrowing_is_overdue(cursor, 53)
+)
 
 # Close the mysql connection
 cursor.close()
