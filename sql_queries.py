@@ -198,16 +198,25 @@ def create_copy(cursor, conn, copy_id, book_id, edition):
     conn.commit()
 
 
-def read_copies(cursor):
-    select_query = "SELECT * FROM copies"
+def read_copy_ids(cursor):
+    select_query = "SELECT copy_id FROM copies"
     cursor.execute(select_query)
-    rows = cursor.fetchall()
+    fetched_copies = cursor.fetchall()
 
-    table = PrettyTable()
-    table.field_names = ["Copy ID", "Book ID", "Edition"]
-    for row in rows:
-        table.add_row(row)
-    print(table)
+    copies = [item[0] for item in fetched_copies]
+
+    return copies
+
+def read_borrowed_copies(cursor):
+    select_query = "SELECT copy_id, return_id FROM borrowings"
+    cursor.execute(select_query)
+    fetched_copies = cursor.fetchall()
+
+    copies = [item[0] for item in fetched_copies if item[1] is None]
+
+    return copies
+
+
 
 def read_copy_amount(cursor, id):
     select_query = f"SELECT count(*) FROM copies WHERE book_id = {id}"
